@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Multi-Agent Content Pipeline</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#141a2e; --panel2:#1b2440; --line:#27314f;
+    --text:#e7ecf6; --muted:#94a3c4; --accent:#6d8bff; --accent2:#8b5cf6;
+    --ok:#34d399; --warn:#fbbf24; --pending:#3a4566;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:radial-gradient(1200px 600px at 20% -10%,#16204a 0,var(--bg) 55%);color:var(--text);min-height:100vh}
+  header{padding:28px 32px 8px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:22px;margin:0;font-weight:700;letter-spacing:.2px}
+  .badge{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--panel)}
+  .badge.live{color:#0b1020;background:linear-gradient(90deg,var(--ok),#22d3ee);border:none;font-weight:700}
+  .badge.stub{color:var(--warn);border-color:#5b4a14;background:#2a2410}
+  .wrap{display:grid;grid-template-columns:380px 1fr;gap:22px;padding:18px 32px 40px}
+  @media(max-width:980px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px}
+  label{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px}
+  input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+        border-radius:10px;padding:11px 12px;font-size:14px;outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  button{margin-top:18px;width:100%;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;
+         color:#0b1020;background:linear-gradient(90deg,var(--accent),var(--accent2));cursor:pointer}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .agents{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+  .agent{display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--line);
+         border-radius:12px;background:var(--panel2);transition:.25s}
+  .agent .dot{width:11px;height:11px;border-radius:50%;background:#3a4566;flex:none;box-shadow:0 0 0 0 rgba(109,139,255,.5)}
+  .agent.active{border-color:var(--accent)}
+  .agent.active .dot{background:var(--accent);animation:pulse 1.1s infinite}
+  .agent.done{border-color:#1f6f52}
+  .agent.done .dot{background:var(--ok)}
+  .agent .name{font-weight:600;text-transform:capitalize}
+  .agent .meta{margin-left:auto;font-size:12px;color:var(--muted)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(109,139,255,.5)}70%{box-shadow:0 0 0 9px rgba(109,139,255,0)}100%{box-shadow:0 0 0 0 rgba(109,139,255,0)}}
+  .right{display:flex;flex-direction:column;gap:18px}
+  .seoGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .kv{font-size:13px}
+  .kv b{display:block;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+  .chip{font-size:12px;padding:4px 9px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .article{background:#0e1426;border:1px solid var(--line);border-radius:14px;padding:8px 24px 20px;max-height:620px;overflow:auto;line-height:1.6}
+  .article h1{font-size:26px} .article h2{font-size:19px;margin-top:24px;color:#cdd7f5}
+  .article p{color:#d3dbf0} .article li{color:#d3dbf0}
+  .toolbar{display:flex;gap:10px;margin-top:6px}
+  .toolbar button{margin:0;width:auto;padding:9px 14px;font-size:13px;background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+  .empty{color:var(--muted);text-align:center;padding:50px 10px}
+  .factrow{font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .verdict{font-size:11px;padding:2px 8px;border-radius:999px;margin-left:8px}
+  .v-supported{background:#0f3d2a;color:var(--ok)} .v-plausible{background:#3a3410;color:var(--warn)}
+  .v-unsupported{background:#3d1414;color:#fca5a5}
+  small.hint{color:var(--muted)}
+  .err{background:#3d1414;border:1px solid #7f1d1d;color:#fca5a5;padding:12px;border-radius:10px;margin-top:12px;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 AI Multi-Agent Content Pipeline</h1>
+  <span id="provider" class="badge">checking…</span>
+  <span class="badge">research → writer → editor → seo → publish</span>
+</header>
+
+<div class="wrap">
+  <!-- LEFT: controls + live agents -->
+  <div class="card">
+    <label>Topic</label>
+    <input id="topic" placeholder="e.g. AI agents for fintech document automation"
+           value="AI agents for small business automation" />
+    <div class="row">
+      <div><label>Words</label><input id="words" type="number" value="700" min="200" max="3000" /></div>
+      <div><label>Tone</label>
+        <select id="tone">
+          <option>clear and professional</option>
+          <option>witty and casual</option>
+          <option>authoritative</option>
+          <option>friendly and simple</option>
+        </select>
+      </div>
+    </div>
+    <label>Audience</label>
+    <input id="audience" value="general business readers" />
+    <button id="go" onclick="run()">⚡ Generate Article</button>
+
+    <div class="agents" id="agents">
+      <div class="agent" data-a="research"><span class="dot"></span><span class="name">research</span><span class="meta"></span></div>
+      <div class="agent" data-a="writer"><span class="dot"></span><span class="name">writer</span><span class="meta"></span></div>
+      <div class="agent" data-a="editor"><span class="dot"></span><span class="name">editor</span><span class="meta"></span></div>
+      <div class="agent" data-a="seo"><span class="dot"></span><span class="name">seo</span><span class="meta"></span></div>
+      <div class="agent" data-a="publish"><span class="dot"></span><span class="name">publish</span><span class="meta"></span></div>
+    </div>
+    <div id="error"></div>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div class="right">
+    <div class="card">
+      <h3 style="margin:0 0 6px">SEO & Metadata</h3>
+      <div id="seo" class="empty">Run the pipeline to see results.</div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h3 style="margin:0">Final Article</h3>
+        <div class="toolbar" id="toolbar" style="display:none">
+          <button onclick="copyMd()">Copy Markdown</button>
+          <button onclick="downloadMd()">Download .md</button>
+        </div>
+      </div>
+      <div id="article" class="article"><div class="empty">No article yet.</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 6px">Editor Report & Fact-Check</h3>
+      <div id="report" class="empty">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let lastMarkdown = "", lastSlug = "article";
+
+async function health(){
+  try{
+    const h = await (await fetch('/health')).json();
+    const el = document.getElementById('provider');
+    if(h.llm_live){ el.className='badge live'; el.textContent = `LIVE · ${h.provider} · ${h.model}`; }
+    else { el.className='badge stub'; el.textContent = `STUB MODE · set ${h.provider.toUpperCase()} key in .env`; }
+  }catch(e){ document.getElementById('provider').textContent='offline'; }
+}
+health();
+
+function resetAgents(){
+  document.querySelectorAll('.agent').forEach(a=>{a.classList.remove('active','done');a.querySelector('.meta').textContent='';});
+  document.getElementById('error').innerHTML='';
+}
+function setActive(name){
+  document.querySelectorAll('.agent').forEach(a=>a.classList.remove('active'));
+  const next = nextAgentAfter(name);
+  if(next) document.querySelector(`.agent[data-a="${next}"]`)?.classList.add('active');
+}
+const ORDER=['research','writer','editor','seo','publish'];
+function nextAgentAfter(name){const i=ORDER.indexOf(name);return ORDER[i+1];}
+
+// Minimal, safe markdown -> HTML (headings, lists, bold, paragraphs).
+function mdToHtml(md){
+  const esc = s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = esc(md).split('\n'); let html='', inList=false;
+  for(let line of lines){
+    if(/^### /.test(line)){html+=`<h3>${line.slice(4)}</h3>`;continue;}
+    if(/^## /.test(line)){html+=`<h2>${line.slice(3)}</h2>`;continue;}
+    if(/^# /.test(line)){html+=`<h1>${line.slice(2)}</h1>`;continue;}
+    if(/^\s*[-*] /.test(line)||/^\s*\d+\. /.test(line)){
+      if(!inList){html+='<ul>';inList=true;}
+      html+=`<li>${line.replace(/^\s*([-*]|\d+\.)\s/,'')}</li>`;continue;
+    }
+    if(inList){html+='</ul>';inList=false;}
+    if(line.trim()==='') continue;
+    html+=`<p>${line}</p>`;
+  }
+  if(inList)html+='</ul>';
+  return html.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+}
+
+function run(){
+  resetAgents();
+  document.getElementById('go').disabled=true;
+  document.getElementById('seo').className='empty';document.getElementById('seo').textContent='Working…';
+  document.getElementById('article').innerHTML='<div class="empty">Agents are working…</div>';
+  document.getElementById('report').textContent='—';
+  document.getElementById('toolbar').style.display='none';
+
+  const q = new URLSearchParams({
+    topic: document.getElementById('topic').value,
+    words: document.getElementById('words').value,
+    tone: document.getElementById('tone').value,
+    audience: document.getElementById('audience').value,
+  });
+  const es = new EventSource('/stream?'+q.toString());
+
+  es.addEventListener('start', e=>{ setActive('__start__'); document.querySelector('.agent[data-a="research"]').classList.add('active'); });
+  es.addEventListener('stage', e=>{
+    const d = JSON.parse(e.data);
+    const el = document.querySelector(`.agent[data-a="${d.name}"]`);
+    if(el){ el.classList.remove('active'); el.classList.add('done');
+      el.querySelector('.meta').textContent = `${d.seconds}s${d.live?' · live':''}`; }
+    setActive(d.name);
+  });
+  es.addEventListener('done', e=>{ render(JSON.parse(e.data)); es.close(); document.getElementById('go').disabled=false; });
+  es.addEventListener('error', e=>{
+    let msg='Stream error.'; try{ if(e.data) msg=JSON.parse(e.data).message; }catch(_){}
+    document.getElementById('error').innerHTML=`<div class="err">⚠ ${msg}</div>`;
+    es.close(); document.getElementById('go').disabled=false;
+  });
+}
+
+function render(data){
+  lastMarkdown = data.final_markdown||'';
+  lastSlug = (data.seo&&data.seo.slug)||'article';
+  // SEO panel
+  const s=data.seo||{};
+  document.getElementById('seo').className='';
+  document.getElementById('seo').innerHTML = `
+    <div class="seoGrid">
+      <div class="kv"><b>Title</b>${s.title||''}</div>
+      <div class="kv"><b>Slug</b>${s.slug||''}</div>
+      <div class="kv" style="grid-column:1/3"><b>Meta description</b>${s.meta_description||''}</div>
+      <div class="kv" style="grid-column:1/3"><b>Social</b>${s.social_caption||''}</div>
+    </div>
+    <div class="chips">${(s.keywords||[]).map(k=>`<span class="chip">${k}</span>`).join('')}</div>`;
+  // Article
+  document.getElementById('article').innerHTML = mdToHtml(lastMarkdown);
+  document.getElementById('toolbar').style.display='flex';
+  // Report
+  const r=data.editor_report||{}; const issues=r.issues_found||[]; const facts=r.fact_check||[];
+  document.getElementById('report').className='';
+  document.getElementById('report').innerHTML =
+    `<div class="kv" style="margin-bottom:8px"><b>Readability</b>${r.readability_score??'—'}</div>` +
+    (facts.length? facts.map(f=>`<div class="factrow">${f.claim}
+        <span class="verdict v-${f.verdict}">${f.verdict}</span></div>`).join('') : '<small class="hint">No fact-check items.</small>') +
+    (issues.length? `<div style="margin-top:10px"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">Issues</b>` +
+        issues.map(i=>`<div class="factrow">[${i.type}] ${i.note} <small class="hint">(${i.severity})</small></div>`).join('')+`</div>`:'');
+}
+
+function copyMd(){ navigator.clipboard.writeText(lastMarkdown); }
+function downloadMd(){
+  const blob=new Blob([lastMarkdown],{type:'text/markdown'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`${lastSlug}.md`; a.click();
+}
+</script>
+</body>
+</html>
